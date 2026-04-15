@@ -1,108 +1,56 @@
-# Streamable HTTP Transport Setup
+# Streamable HTTP Setup (Self-Hosted Native Meta OAuth)
 
 ## Overview
 
-Meta Ads MCP supports **Streamable HTTP Transport**, which allows you to run the server as a standalone HTTP API. This enables direct integration with web applications, custom dashboards, and any system that can make HTTP requests.
+This server now supports fully self-hosted multi-tenant authentication, without Pipeboard.  
+Use Meta OAuth + tenant-scoped API keys and store tokens in encrypted SQLite.
 
 ## Quick Start
 
-### 1. Start the HTTP Server
+### 1) Configure environment
 
 ```bash
-# Basic HTTP server (default: localhost:8080)
-python -m meta_ads_mcp --transport streamable-http
-
-# Custom host and port
-python -m meta_ads_mcp --transport streamable-http --host 0.0.0.0 --port 9000
+cp .env.example .env
 ```
 
-### 2. Set Authentication
+Required variables:
 
-Set your Pipeboard token as an environment variable. This is optional for HTTP transport if you provide the token in the header, but it can be useful for command-line use.
+- `META_APP_ID`
+- `META_APP_SECRET`
+- `OAUTH_REDIRECT_URI`
+- `META_MCP_ENCRYPTION_KEY`
+
+### 2) Start HTTP transport
 
 ```bash
-export PIPEBOARD_API_TOKEN=your_pipeboard_token
+python -m meta_ads_mcp --transport streamable-http --host 0.0.0.0 --port 8080
 ```
 
-### 3. Make HTTP Requests
+### 3) Bootstrap tenant authentication
 
-The server accepts JSON-RPC 2.0 requests at the `/mcp` endpoint. Use the `Authorization` header to provide your token.
+1. Call `mcp_meta_ads_get_login_link` with `tenant_id`
+2. Complete Meta OAuth in browser
+3. Call `mcp_meta_ads_complete_oauth` with `tenant_id` and authorization `code`
+4. Register API key with `mcp_meta_ads_register_tenant_api_key`
+5. Grant account access with `mcp_meta_ads_grant_tenant_account_access`
+
+### 4) Make MCP requests
+
+For stateless HTTP requests, include:
+
+- `Authorization: Bearer <meta_access_token>` OR allow server to load token from tenant store
+- `X-TENANT-ID: <tenant_id>`
+- `X-TENANT-API-KEY: <tenant_api_key>` (recommended)
+
+Example:
 
 ```bash
 curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -H "Authorization: Bearer your_pipeboard_token" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "tools/call",
-    "id": 1,
-    "params": {
-      "name": "get_ad_accounts",
-      "arguments": {"limit": 5}
-    }
-  }'
-```
-
-## Configuration Options
-
-### Command Line Arguments
-
-| Argument | Description | Default |
-|----------|-------------|---------|
-| `--transport` | Transport mode | `stdio` |
-| `--host` | Server host address | `localhost` |
-| `--port` | Server port | `8080` |
-
-### Examples
-
-```bash
-# Local development server
-python -m meta_ads_mcp --transport streamable-http --host localhost --port 8080
-
-# Production server (accessible externally)
-python -m meta_ads_mcp --transport streamable-http --host 0.0.0.0 --port 8080
-
-# Custom port
-python -m meta_ads_mcp --transport streamable-http --port 9000
-```
-
-## Authentication
-
-### Primary Method: Bearer Token (Recommended)
-
-1. Sign up at [Pipeboard.co](https://pipeboard.co)
-2. Generate an API token at [pipeboard.co/api-tokens](https://pipeboard.co/api-tokens)
-3. Include the token in the `Authorization` HTTP header:
-
-```bash
-curl -H "Authorization: Bearer your_pipeboard_token" \
-     -X POST http://localhost:8080/mcp \
-     -H "Content-Type: application/json" \
-     -H "Accept: application/json, text/event-stream" \
-     -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
-```
-
-#### Remote MCP: Token in URL
-
-When using the hosted Remote MCP at `https://mcp.pipeboard.co/meta-ads-mcp`, you can alternatively authenticate by including the token as a URL parameter:
-
-```
-https://mcp.pipeboard.co/meta-ads-mcp?token=YOUR_PIPEBOARD_TOKEN
-```
-
-This is particularly useful for MCP clients that don't support interactive authentication flows.
-
-### Alternative Method: Direct Meta Token
-
-If you have a Meta Developer App, you can use a direct access token via the `X-META-ACCESS-TOKEN` header. This is less common.
-
-```bash
-curl -H "X-META-ACCESS-TOKEN: your_meta_access_token" \
-     -X POST http://localhost:8080/mcp \
-     -H "Content-Type: application/json" \
-     -H "Accept: application/json, text/event-stream" \
-     -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
+  -H "X-TENANT-ID: tenant-a" \
+  -H "X-TENANT-API-KEY: tenant_a_secret_key" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
 ```
 
 ## Available Endpoints
@@ -293,12 +241,13 @@ client.callTool('get_ad_accounts', { limit: 5 })
 
 ## Production Deployment
 
-### Security Considerations
+### Security Checklist
 
-1. **Use HTTPS**: In production, run behind a reverse proxy with SSL/TLS
-2. **Authentication**: Always use valid Bearer tokens.
-3. **Network Security**: Configure firewalls and access controls appropriately
-4. **Rate Limiting**: Consider implementing rate limiting for public APIs
+1. Use HTTPS and terminate TLS at reverse proxy.
+2. Rotate `META_MCP_ENCRYPTION_KEY` with controlled migration.
+3. Use strong tenant API keys; store only hashes.
+4. Restrict network ingress to trusted clients.
+5. Monitor audit logs for write operations.
 
 ### Docker Deployment
 
@@ -317,16 +266,11 @@ CMD ["python", "-m", "meta_ads_mcp", "--transport", "streamable-http", "--host",
 ### Environment Variables
 
 ```bash
-# For Pipeboard-based authentication. The token will be used for stdio,
-# but for HTTP it should be passed in the Authorization header.
-export PIPEBOARD_API_TOKEN=your_pipeboard_token
-
-# Optional (for custom Meta apps)
 export META_APP_ID=your_app_id
 export META_APP_SECRET=your_app_secret
-
-# Optional (for direct Meta token)
-export META_ACCESS_TOKEN=your_access_token
+export OAUTH_REDIRECT_URI=https://your-domain.com/callback
+export META_MCP_ENCRYPTION_KEY=replace-with-random-secret
+export META_MCP_DB_PATH=/data/meta_ads_mcp.db
 ```
 
 ## Troubleshooting
