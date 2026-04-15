@@ -8,6 +8,7 @@ import httpx
 import asyncio
 import functools
 import os
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 from . import auth
 from .auth import needs_authentication, auth_manager, get_tenant_context, tenant_store
 from .utils import logger
@@ -34,6 +35,7 @@ def ensure_act_prefix(account_id: str) -> str:
 META_GRAPH_API_VERSION = "v24.0"
 META_GRAPH_API_BASE = f"https://graph.facebook.com/{META_GRAPH_API_VERSION}"
 USER_AGENT = "meta-ads-mcp/1.0"
+SENSITIVE_QUERY_KEYS = {"access_token", "appsecret_proof", "client_secret", "token", "authorization"}
 
 # Log key environment and configuration at startup
 logger.info("Core API module initialized")
@@ -95,6 +97,44 @@ def _log_meta_rate_limit_headers(headers: dict, endpoint: str) -> None:
 
         log_fn = logger.warning if is_high else logger.info
         log_fn(f"meta_rate_limit_usage endpoint={endpoint} {json.dumps(usage_data)}")
+
+
+def _sanitize_url(url: str) -> str:
+    """Remove sensitive query parameters from URLs in API responses."""
+    try:
+        parsed = urlparse(url)
+        if not parsed.query:
+            return url
+        filtered_params = []
+        for k, v in parse_qsl(parsed.query, keep_blank_values=True):
+            if k.lower() in SENSITIVE_QUERY_KEYS:
+                filtered_params.append((k, "***REDACTED***"))
+            else:
+                filtered_params.append((k, v))
+        return urlunparse(parsed._replace(query=urlencode(filtered_params)))
+    except Exception:
+        # If parsing fails, return original string to avoid breaking responses
+        return url
+
+
+def sanitize_sensitive_fields(payload: Any) -> Any:
+    """Recursively redact secrets from dict/list/string responses."""
+    if isinstance(payload, dict):
+        sanitized = {}
+        for key, value in payload.items():
+            key_lower = str(key).lower()
+            if key_lower in SENSITIVE_QUERY_KEYS:
+                sanitized[key] = "***REDACTED***"
+            elif isinstance(value, str) and (value.startswith("http://") or value.startswith("https://")):
+                sanitized[key] = _sanitize_url(value)
+            else:
+                sanitized[key] = sanitize_sensitive_fields(value)
+        return sanitized
+    if isinstance(payload, list):
+        return [sanitize_sensitive_fields(item) for item in payload]
+    if isinstance(payload, str) and (payload.startswith("http://") or payload.startswith("https://")):
+        return _sanitize_url(payload)
+    return payload
 
 
 async def make_api_request(
@@ -207,7 +247,7 @@ async def make_api_request(
 
                 # Ensure the response is JSON and return it as a dictionary
                 try:
-                    return response.json()
+                    return sanitize_sensitive_fields(response.json())
                 except json.JSONDecodeError:
                     return {
                         "text_response": response.text,
@@ -217,7 +257,7 @@ async def make_api_request(
             except httpx.HTTPStatusError as e:
                 error_info = {}
                 try:
-                    error_info = e.response.json()
+                    error_info = sanitize_sensitive_fields(e.response.json())
                 except Exception:
                     error_info = {"status_code": e.response.status_code, "text": e.response.text}
             
@@ -258,10 +298,10 @@ async def make_api_request(
                 full_response = {
                     "headers": dict(e.response.headers),
                     "status_code": e.response.status_code,
-                    "url": str(e.response.url),
+                    "url": _sanitize_url(str(e.response.url)),
                     "reason": getattr(e.response, "reason_phrase", "Unknown reason"),
                     "request_method": e.request.method,
-                    "request_url": str(e.request.url),
+                    "request_url": _sanitize_url(str(e.request.url)),
                 }
                 return {"error": {"message": f"HTTP Error: {e.response.status_code}", "details": error_info, "full_response": full_response}}
 
