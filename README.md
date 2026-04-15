@@ -2,24 +2,24 @@
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for interacting with Meta Ads. Analyze, manage and optimize Meta advertising campaigns through an AI interface. Use an LLM to retrieve performance data, visualize ad creatives, and provide strategic insights for your ads on Facebook, Instagram, and other Meta platforms.
 
-> **Note:** This is an independent open-source project that uses Meta's public APIs. If you're looking for an officially approved Meta app, check out [Pipeboard](https://pipeboard.co). Meta, Facebook, Instagram, and other Meta brand names are trademarks of their respective owners.
+> **Note:** This is an independent open-source project that uses Meta's public APIs. It is not affiliated with or endorsed by Meta. Meta, Facebook, Instagram, and other Meta brand names are trademarks of their respective owners.
 
 [![Meta Ads MCP Server Demo](https://github.com/user-attachments/assets/3e605cee-d289-414b-814c-6299e7f3383e)](https://github.com/user-attachments/assets/3e605cee-d289-414b-814c-6299e7f3383e)
 
-[![MCP Badge](https://lobehub.com/badge/mcp/nictuku-meta-ads-mcp)](https://lobehub.com/mcp/nictuku-meta-ads-mcp)
+[![Repository](https://img.shields.io/badge/GitHub-jagmohan0908%2Fmcp--meta-181717?logo=github)](https://github.com/jagmohan0908/mcp-meta)
 
-mcp-name: co.pipeboard/meta-ads-mcp
+mcp-name: jagmohan0908/mcp-meta
 
 ## Community & Support
 
-- [Discord](https://discord.gg/YzMwQ8zrjr). Join the community.
-- [Email Support](mailto:info@pipeboard.co). Email us for support.
+- Use issues in this repository for bugs and feature requests.
+- For deployment/runbook details, see [`SELF_HOSTED_RUNBOOK.md`](SELF_HOSTED_RUNBOOK.md).
 
 ## Table of Contents
 
-- [🚀 Getting started with Remote MCP (Recommended for Marketers)](#getting-started-with-remote-mcp-recommended)
-- [Pipeboard CLI (Alternative to MCP)](#pipeboard-cli-alternative-to-mcp)
-- [Local Installation (Technical Users Only)](#local-installation-technical-users-only)
+- [Self-Hosted Quick Start](#self-hosted-quick-start)
+- [Authentication Model (Multi-Tenant)](#authentication-model-multi-tenant)
+- [Local Installation](#local-installation)
 - [Features](#features)
 - [Configuration](#configuration)
 - [Available MCP Tools](#available-mcp-tools)
@@ -28,122 +28,59 @@ mcp-name: co.pipeboard/meta-ads-mcp
 - [Testing](#testing)
 - [Troubleshooting](#troubleshooting)
 
-## Getting started with Remote MCP (Recommended)
+## Self-Hosted Quick Start
 
-The fastest and most reliable way to get started is to **[🚀 Get started with our Meta Ads Remote MCP](https://pipeboard.co)**. Our cloud service uses streamable HTTP transport for reliable, scalable access to Meta Ads data. No technical setup required - just connect and start analyzing your ad campaigns with AI!
+This repository is configured for a self-hosted workflow with native Meta OAuth and multi-tenant authorization.
 
-### For Claude Pro/Max Users
+1. Copy env template and set values:
 
-1. Go to [claude.ai/settings/integrations](https://claude.ai/settings/integrations) (requires Claude Pro or Max)
-2. Click "Add Integration" and enter:
-   - **Name**: "Pipeboard Meta Ads" (or any name you prefer)
-   - **Integration URL**: `https://mcp.pipeboard.co/meta-ads-mcp`
-3. Click "Connect" next to the integration and follow the prompts to:
-   - Login to Pipeboard
-   - Connect your Facebook Ads account
+   ```bash
+   cp .env.example .env
+   ```
 
-That's it! You can now ask Claude to analyze your Meta ad campaigns, get performance insights, and manage your advertising.
+   Required:
+   - `META_APP_ID`
+   - `META_APP_SECRET`
+   - `OAUTH_REDIRECT_URI` (must match Meta app OAuth settings exactly)
+   - `META_MCP_ENCRYPTION_KEY`
 
-#### Advanced: Direct Token Authentication (Claude)
+2. Start server:
 
-For direct token-based authentication without the interactive flow, use this URL format when adding the integration:
+   ```bash
+   python -m meta_ads_mcp --transport streamable-http --host 0.0.0.0 --port 8080
+   ```
 
-```
-https://mcp.pipeboard.co/meta-ads-mcp?token=YOUR_PIPEBOARD_TOKEN
-```
+3. Bootstrap first tenant:
+   - Call `mcp_meta_ads_get_login_link(tenant_id)`
+   - Complete Meta login and capture `code`
+   - Call `mcp_meta_ads_complete_oauth(tenant_id, code)`
+   - Register tenant key via `mcp_meta_ads_register_tenant_api_key`
+   - Allow account access via `mcp_meta_ads_grant_tenant_account_access`
 
-Get your token at [pipeboard.co/api-tokens](https://pipeboard.co/api-tokens).
+4. Send MCP HTTP requests with tenant headers:
+   - `X-TENANT-ID`
+   - `X-TENANT-API-KEY`
+   - optional `Authorization: Bearer <meta_access_token>`
 
-### For Cursor Users
+For detailed bootstrap and validation flow, see [`SELF_HOSTED_RUNBOOK.md`](SELF_HOSTED_RUNBOOK.md).
 
-Add the following to your `~/.cursor/mcp.json`. Once you enable the remote MCP, click on "Needs login" to finish the login process.
+## Authentication Model (Multi-Tenant)
 
+- **Tenant isolation**: each tenant has separate tokens and account access policy.
+- **Encrypted token storage**: tenant tokens are encrypted at rest in SQLite.
+- **Account-level authorization**: account operations are checked against tenant grants.
+- **Direct token fallback**: `META_ACCESS_TOKEN` can be used for quick local testing.
 
-```json
-{
-  "mcpServers": {
-    "meta-ads-remote": {
-      "url": "https://mcp.pipeboard.co/meta-ads-mcp"
-    }
-  }
-}
-```
-
-#### Advanced: Direct Token Authentication (Cursor)
-
-If you prefer to authenticate without the interactive login flow, you can include your Pipeboard API token directly in the URL:
-
-```json
-{
-  "mcpServers": {
-    "meta-ads-remote": {
-      "url": "https://mcp.pipeboard.co/meta-ads-mcp?token=YOUR_PIPEBOARD_TOKEN"
-    }
-  }
-}
-```
-
-Get your token at [pipeboard.co/api-tokens](https://pipeboard.co/api-tokens).
-
-### For Other MCP Clients
-
-Use the Remote MCP URL: `https://mcp.pipeboard.co/meta-ads-mcp`
-
-**[📖 Get detailed setup instructions for your AI client here](https://pipeboard.co)**
-
-#### Advanced: Direct Token Authentication (OpenClaw and other clients)
-
-For MCP clients that support token-based authentication, you can append your Pipeboard API token to the URL:
-
-```
-https://mcp.pipeboard.co/meta-ads-mcp?token=YOUR_PIPEBOARD_TOKEN
-```
-
-This bypasses the interactive login flow and authenticates immediately. Get your token at [pipeboard.co/api-tokens](https://pipeboard.co/api-tokens).
-
-### Also Available: Google Ads and TikTok Ads
-
-Pipeboard also offers remote MCP servers for **Google Ads** and **TikTok Ads**, set up the same way:
-
-| Platform | Remote MCP URL |
-|---|---|
-| Meta Ads | `https://mcp.pipeboard.co/meta-ads-mcp` |
-| Google Ads | `https://mcp.pipeboard.co/google-ads-mcp` |
-| TikTok Ads | `https://mcp.pipeboard.co/tiktok-ads-mcp` |
-
-Connect your ad accounts at [pipeboard.co](https://pipeboard.co) and use any of them with Claude, Cursor, or any MCP client.
-
-## Pipeboard CLI (Alternative to MCP)
-
-[**Pipeboard CLI**](https://github.com/pipeboard-co/pipeboard-cli) is a command-line tool that gives you access to all Pipeboard ad platforms — Meta Ads, Google Ads, and TikTok Ads — from a single binary. It is built for AI coding agents (Claude Code, Cline, OpenClaw) and automation scripts that prefer shell commands over MCP.
-
-**Why use the CLI instead of MCP:**
-
-- **All platforms in one tool** — Meta, Google, and TikTok Ads without configuring separate MCP servers
-- **More commands** — includes Pipeboard's full set of tools, which is larger than the open-source local MCP
-- **Faster for agents** — sub-50ms startup, no JSON-RPC overhead. Agents just shell out to `pipeboard`
-- **Single binary, zero dependencies** — `brew install pipeboard-co/tap/pipeboard` and you are done
+## Local Installation
 
 ```bash
-# Install
-brew install pipeboard-co/tap/pipeboard
-
-# Authenticate
-export PIPEBOARD_API_TOKEN=<your-token>  # get one at pipeboard.co/settings
-
-# Use it
-pipeboard meta-ads get-campaigns --account-id act_123
-pipeboard google-ads get-campaigns --customer-id 1234567890
-pipeboard meta-ads get-insights --object-id act_123 --date-preset last_30d
+git clone https://github.com/jagmohan0908/mcp-meta.git
+cd mcp-meta
+python -m pip install -r requirements.txt
+python -m meta_ads_mcp --transport streamable-http --host 0.0.0.0 --port 8080
 ```
 
-No servers to run — the CLI talks to Pipeboard's cloud, same as the remote MCP. See the [pipeboard-cli repo](https://github.com/pipeboard-co/pipeboard-cli) for full documentation.
-
-## Local Installation (Advanced Technical Users Only)
-
-🚀 **We strongly recommend using [Remote MCP](https://pipeboard.co) instead** - it's faster, more reliable, and requires no technical setup.
-
-Meta Ads MCP also supports a local streamable HTTP transport, allowing you to run it as a standalone HTTP API for web applications and custom integrations. See **[Streamable HTTP Setup Guide](STREAMABLE_HTTP_SETUP.md)** for complete instructions.
+See [`STREAMABLE_HTTP_SETUP.md`](STREAMABLE_HTTP_SETUP.md) for full HTTP transport and deployment details.
 
 ## Features
 
@@ -162,13 +99,16 @@ Meta Ads MCP also supports a local streamable HTTP transport, allowing you to ru
 
 ## Configuration
 
-### Remote MCP (Recommended)
+### Self-Hosted Configuration (Recommended)
 
-**[✨ Get started with Remote MCP here](https://pipeboard.co)** - no technical setup required! Just connect your Facebook Ads account and start asking AI to analyze your campaigns.
+Set these env vars:
 
-### Local Installation (Advanced Technical Users)
-
-For advanced users who need to self-host, the package can be installed from source. Local installations require creating your own Meta Developer App. **We recommend using [Remote MCP](https://pipeboard.co) for a simpler experience.**
+- `META_APP_ID`
+- `META_APP_SECRET`
+- `OAUTH_REDIRECT_URI`
+- `META_MCP_ENCRYPTION_KEY`
+- `META_MCP_DB_PATH` (optional, defaults under home directory)
+- `META_ACCESS_TOKEN` (optional quick-start token)
 
 ### Available MCP Tools
 
@@ -494,10 +434,12 @@ The only restriction is that you cannot offer this as a competing hosted service
 
 ## Privacy and Security
 
-Meta Ads MCP follows security best practices with secure token management and automatic authentication handling. 
+Meta Ads MCP uses tenant-scoped auth and encrypted token persistence.
 
-- **Remote MCP**: All authentication is handled securely in the cloud - no local token storage required
-- **Local Installation**: Tokens are cached securely on your local machine
+- Tenant API keys are stored hashed.
+- Meta access tokens are encrypted at rest.
+- Account actions are tenant-authorized before execution.
+- Use HTTPS and a reverse proxy in production.
 
 ## Testing
 
@@ -505,18 +447,18 @@ Meta Ads MCP follows security best practices with secure token management and au
 
 Test your Meta Ads MCP connection with any MCP client:
 
-1. **Verify Account Access**: Ask your LLM to use `mcp_meta_ads_get_ad_accounts`
-2. **Check Account Details**: Use `mcp_meta_ads_get_account_info` with your account ID
-3. **List Campaigns**: Try `mcp_meta_ads_get_campaigns` to see your ad campaigns
+1. **Verify Auth**: run `mcp_meta_ads_get_login_link` and `mcp_meta_ads_complete_oauth`
+2. **Verify Tenant Access**: call `mcp_meta_ads_register_tenant_api_key` and `mcp_meta_ads_grant_tenant_account_access`
+3. **Read Flow**: use `mcp_meta_ads_get_ad_accounts` and `mcp_meta_ads_get_campaigns`
+4. **Write Flow**: test one safe write action in a non-production account
 
-For detailed local installation testing, see the source repository.
+For operator steps, see [`SELF_HOSTED_RUNBOOK.md`](SELF_HOSTED_RUNBOOK.md).
 
 ## Troubleshooting
 
-### 💡 Quick Fix: Skip the Technical Setup!
+### Common Self-Hosted Issues
 
-The easiest way to avoid any setup issues is to **[🎯 use our Remote MCP instead](https://pipeboard.co)**. No downloads, no configuration - just connect your ads account and start getting AI insights on your campaigns immediately!
-
-### Local Installation Issues
-
-For local installation issues, refer to the source repository. **For the easiest experience, we recommend using [Remote MCP](https://pipeboard.co) instead.**
+- **401/403 from Meta API**: verify tenant token is valid and app permissions are granted.
+- **Forbidden account access**: ensure account is granted with `mcp_meta_ads_grant_tenant_account_access`.
+- **OAuth redirect mismatch**: `OAUTH_REDIRECT_URI` must exactly match Meta app OAuth settings.
+- **Token persistence problems**: confirm `META_MCP_ENCRYPTION_KEY` and writable DB path.
