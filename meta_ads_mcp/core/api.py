@@ -10,7 +10,14 @@ import functools
 import os
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 from . import auth
-from .auth import needs_authentication, auth_manager, get_tenant_context, tenant_store
+from .auth import (
+    needs_authentication,
+    auth_manager,
+    get_current_app_label,
+    get_tenant_context,
+    meta_config,
+    tenant_store,
+)
 from .utils import logger
 
 class McpToolError(Exception):
@@ -179,7 +186,9 @@ async def make_api_request(
     # Required for system user tokens and recommended by Meta for all
     # server-to-server API calls to verify token authenticity.
     # See: https://developers.facebook.com/docs/graph-api/securing-requests/
-    app_secret = os.environ.get("META_APP_SECRET", "")
+    app_label = get_current_app_label()
+    app_profile = meta_config.get_app_profile(app_label)
+    app_secret = app_profile.app_secret or os.environ.get("META_APP_SECRET", "")
     if app_secret and access_token:
         request_params["appsecret_proof"] = hmac.new(
             app_secret.encode("utf-8"),
@@ -193,7 +202,7 @@ async def make_api_request(
     logger.debug(f"Request params: {masked_params}")
     
     # Check for app_id in params
-    app_id = auth_manager.app_id
+    app_id = app_profile.app_id or auth_manager.app_id
     logger.debug(f"Current app_id from auth_manager: {app_id}")
     
     async with httpx.AsyncClient() as client:

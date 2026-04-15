@@ -96,11 +96,17 @@ class TenantStore:
                     access_token_encrypted TEXT NOT NULL,
                     expires_at INTEGER,
                     meta_user_id TEXT,
+                    app_label TEXT,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY(tenant_id) REFERENCES tenants(tenant_id)
                 )
                 """
             )
+            existing_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(tenant_tokens)").fetchall()
+            }
+            if "app_label" not in existing_columns:
+                conn.execute("ALTER TABLE tenant_tokens ADD COLUMN app_label TEXT")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tenant_accounts (
@@ -152,6 +158,7 @@ class TenantStore:
         access_token: str,
         expires_at: Optional[int] = None,
         meta_user_id: Optional[str] = None,
+        app_label: Optional[str] = None,
     ) -> None:
         self.ensure_tenant(tenant_id)
         encrypted = encrypt_token(access_token, self.encryption_key)
@@ -159,10 +166,10 @@ class TenantStore:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO tenant_tokens
-                (tenant_id, access_token_encrypted, expires_at, meta_user_id, updated_at)
-                VALUES (?, ?, ?, ?, ?)
+                (tenant_id, access_token_encrypted, expires_at, meta_user_id, app_label, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (tenant_id, encrypted, expires_at, meta_user_id, utc_now_iso()),
+                (tenant_id, encrypted, expires_at, meta_user_id, app_label, utc_now_iso()),
             )
 
     def get_meta_token(self, tenant_id: str) -> Optional[str]:

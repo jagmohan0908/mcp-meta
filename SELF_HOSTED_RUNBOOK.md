@@ -30,6 +30,7 @@ Include:
 
 - `X-TENANT-ID: <tenant_id>`
 - `X-TENANT-API-KEY: <tenant_api_key>`
+- `X-META-APP-LABEL: <label>` (optional; selects app credentials from `META_APP_CREDENTIALS_JSON`)
 - Optional: `Authorization: Bearer <meta_access_token>`
 
 If `Authorization` is omitted, middleware loads token from tenant store.

@@ -5,14 +5,16 @@ from typing import Optional
 
 import httpx
 
-from .auth import auth_manager, meta_config, tenant_store
+from .auth import auth_manager, get_current_app_label, meta_config, tenant_store
 from .server import mcp_server
 from .utils import logger
 
 
-async def get_login_link(tenant_id: str, state: Optional[str] = None) -> str:
+async def get_login_link(tenant_id: str, state: Optional[str] = None, app_label: Optional[str] = None) -> str:
     """Generate a Meta OAuth URL for a specific tenant."""
-    if not meta_config.is_configured():
+    effective_label = app_label or get_current_app_label()
+    profile = meta_config.get_app_profile(effective_label)
+    if not (profile.app_id and profile.oauth_redirect_uri):
         return json.dumps(
             {
                 "error": "META_APP_ID and OAUTH_REDIRECT_URI must be configured for OAuth.",
@@ -20,10 +22,11 @@ async def get_login_link(tenant_id: str, state: Optional[str] = None) -> str:
             indent=2,
         )
     tenant_store.ensure_tenant(tenant_id)
-    login_url = auth_manager.get_auth_url(tenant_id=tenant_id, state=state)
+    login_url = auth_manager.get_auth_url(tenant_id=tenant_id, state=state, app_label=effective_label)
     return json.dumps(
         {
             "tenant_id": tenant_id,
+            "app_label": profile.label,
             "login_url": login_url,
             "markdown_link": f"[Authenticate tenant {tenant_id}]({login_url})",
             "instructions": "After granting access, exchange the code with mcp_meta_ads_complete_oauth.",
@@ -32,11 +35,13 @@ async def get_login_link(tenant_id: str, state: Optional[str] = None) -> str:
     )
 
 
-async def complete_oauth(tenant_id: str, code: str) -> str:
+async def complete_oauth(tenant_id: str, code: str, app_label: Optional[str] = None) -> str:
     """Exchange OAuth authorization code and persist tenant token."""
-    app_id = meta_config.get_app_id()
-    app_secret = meta_config.app_secret
-    redirect_uri = meta_config.redirect_uri
+    effective_label = app_label or get_current_app_label()
+    profile = meta_config.get_app_profile(effective_label)
+    app_id = profile.app_id
+    app_secret = profile.app_secret
+    redirect_uri = profile.oauth_redirect_uri
     if not (app_id and app_secret and redirect_uri):
         return json.dumps(
             {"error": "META_APP_ID, META_APP_SECRET and OAUTH_REDIRECT_URI are required."},
@@ -63,18 +68,21 @@ async def complete_oauth(tenant_id: str, code: str) -> str:
         tenant_id=tenant_id,
         access_token=access_token,
         expires_at=token_data.get("expires_in"),
+        app_label=profile.label,
     )
     logger.info("Stored OAuth token for tenant %s", tenant_id)
     return json.dumps(
-        {"status": "ok", "tenant_id": tenant_id, "expires_in": token_data.get("expires_in")},
+        {"status": "ok", "tenant_id": tenant_id, "app_label": profile.label, "expires_in": token_data.get("expires_in")},
         indent=2,
     )
 
 
-async def refresh_tenant_token(tenant_id: str) -> str:
+async def refresh_tenant_token(tenant_id: str, app_label: Optional[str] = None) -> str:
     """Refresh token lifecycle using Meta long-lived token exchange."""
-    app_id = meta_config.get_app_id()
-    app_secret = meta_config.app_secret
+    effective_label = app_label or get_current_app_label()
+    profile = meta_config.get_app_profile(effective_label)
+    app_id = profile.app_id
+    app_secret = profile.app_secret
     current_token = tenant_store.get_meta_token(tenant_id)
     if not (app_id and app_secret and current_token):
         return json.dumps(

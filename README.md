@@ -60,6 +60,7 @@ This repository is configured for a self-hosted workflow with native Meta OAuth 
 4. Send MCP HTTP requests with tenant headers:
    - `X-TENANT-ID`
    - `X-TENANT-API-KEY`
+   - optional `X-META-APP-LABEL` (example: `dr_health`, `sriaas`, `siya`)
    - optional `Authorization: Bearer <meta_access_token>`
 
 For detailed bootstrap and validation flow, see [`SELF_HOSTED_RUNBOOK.md`](SELF_HOSTED_RUNBOOK.md).

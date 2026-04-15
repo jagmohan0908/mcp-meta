@@ -5,7 +5,13 @@ from typing import Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from .auth import clear_tenant_context, set_tenant_context, tenant_store
+from .auth import (
+    clear_current_app_label,
+    clear_tenant_context,
+    set_current_app_label,
+    set_tenant_context,
+    tenant_store,
+)
 from .tenant_store import TenantAuthContext
 from .utils import logger
 
@@ -88,7 +94,11 @@ class AuthInjectionMiddleware(BaseHTTPMiddleware):
         bearer = FastMCPAuthIntegration.extract_bearer(headers)
         tenant_id = headers.get("x-tenant-id") or headers.get("X-TENANT-ID")
         api_key = headers.get("x-tenant-api-key") or headers.get("X-TENANT-API-KEY")
+        app_label = headers.get("x-meta-app-label") or headers.get("X-META-APP-LABEL")
         user_id: Optional[str] = None
+
+        if app_label:
+            set_current_app_label(app_label.strip())
 
         if api_key:
             resolved = tenant_store.resolve_api_key(api_key)
@@ -113,6 +123,7 @@ class AuthInjectionMiddleware(BaseHTTPMiddleware):
             return response
         finally:
             clear_tenant_context()
+            clear_current_app_label()
 
 def setup_starlette_middleware(app):
     if not app:
