@@ -108,10 +108,11 @@ class AuthInjectionMiddleware(BaseHTTPMiddleware):
         if not bearer and tenant_id:
             bearer = tenant_store.get_meta_token(tenant_id)
 
-        if bearer and tenant_id:
+        if bearer:
+            effective_tenant_id = tenant_id or "__header_bearer__"
             set_tenant_context(
                 TenantAuthContext(
-                    tenant_id=tenant_id,
+                    tenant_id=effective_tenant_id,
                     user_id=user_id,
                     access_token=bearer,
                     source="http",
