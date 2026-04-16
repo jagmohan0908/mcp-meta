@@ -6,6 +6,15 @@ from .campaigns import get_campaigns, get_campaign_details, create_campaign
 from .adsets import get_adsets, get_adset_details, update_adset
 from .ads import get_ads, get_ad_details, get_creative_details, get_ad_creatives, get_ad_image, update_ad
 from .insights import get_insights
+from .organic import (
+    get_page_posts,
+    get_page_insights,
+    get_post_insights,
+    get_instagram_account,
+    get_instagram_insights,
+    get_instagram_media,
+    get_instagram_media_insights,
+)
 from . import authentication  # Import module to register auth tools
 from .server import login_cli, main
 from .auth import login
@@ -33,6 +42,13 @@ __all__ = [
     'get_ad_image',
     'update_ad',
     'get_insights',
+    'get_page_posts',
+    'get_page_insights',
+    'get_post_insights',
+    'get_instagram_account',
+    'get_instagram_insights',
+    'get_instagram_media',
+    'get_instagram_media_insights',
     # Note: 'get_login_link' is registered conditionally by the authentication module
     'login_cli',
     'login',

@@ -111,7 +111,7 @@ def main():
         
         # Import all tool modules to ensure they are registered
         logger.info("Ensuring all tools are registered for HTTP transport")
-        from . import accounts, campaigns, adsets, ads, insights, authentication
+        from . import accounts, campaigns, adsets, ads, insights, organic, authentication
         from . import ads_library, budget_schedules, reports, openai_deep_research
         
         logger.info("Setting up HTTP authentication middleware")
